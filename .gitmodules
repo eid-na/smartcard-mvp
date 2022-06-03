@@ -1,0 +1,15 @@
+[submodule "references/GlobalPlatformPro"]
+	path = references/GlobalPlatformPro
+	url = https://github.com/martinpaljak/GlobalPlatformPro.git
+[submodule "references/javacard-curated-list"]
+	path = references/javacard-curated-list
+	url = https://github.com/licel/javacard-curated-list.git
+[submodule "references/jcardsim"]
+	path = references/jcardsim
+	url = https://github.com/licel/jcardsim.git
+[submodule "references/ant-javacard"]
+	path = references/ant-javacard
+	url = https://github.com/martinpaljak/ant-javacard.git
+[submodule "references/AppletPlayground"]
+	path = references/AppletPlayground
+	url = https://github.com/martinpaljak/AppletPlayground.git
