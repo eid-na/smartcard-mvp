@@ -5,10 +5,18 @@ For the embedded smartcard code
 Build an image using the provided Dockerfile. 
 
 ### How to compile
-Go to the respective applet directory and run `ant`.
+Go to the respective applet directory and run `ant`. This prototype depends on https://github.com/martinpaljak/ant-javacard.git to compile, but long-term 
 
 ### How run software tests
 
 
 ### How to run hardware tests
 Use the GlobalPlatformPro executable gp.{jar,exe} from a host terminal (i.e., not inside the development container) to load the *.cap file(s) on to the card. Obviously, you must have a physical smartcard that is compliant with the app's respective version of the JavaCard standard. For example, HelloWorld is targeted for v3.0.4. GlobalPlatformPro intergrates automatically with most off-the-shelf smartcard USB readers, using your operating system's default/downloaded drivers.
+
+
+## Dependency Risks
+The following dependencies must be forked or replicated before commericialization. ALL source code and hardware must be understood and either controlled or trusted, to be secure.
+1. The smartcard supply chain
+2. GlobalPlatformPro
+3. The Ant compile task
+4. The Java Development Kit + JavaCard Development Kit
