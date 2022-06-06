@@ -5,7 +5,7 @@ For the embedded smartcard code
 Build an image using the provided Dockerfile. 
 
 ### How to compile
-Go to the respective applet directory and run `ant`. This prototype depends on https://github.com/martinpaljak/ant-javacard.git to compile, but long-term 
+Go to the respective applet directory and run `ant`.
 
 ### How run software tests
 
