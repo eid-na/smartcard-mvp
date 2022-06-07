@@ -3,8 +3,8 @@
     <taskdef name="javacard" classname="pro.javacard.ant.JavaCard" classpath="ant-javacard.jar"/>
 
     <javacard>
-    <cap jckit="../../references/ant-javacard/sdks/jc310r20210706_kit" targetsdk="../../references/ant-javacard/sdks/jc304_kit" sources="src" aid="0102030405">
-        <applet class="HelloWorld.HelloWorldApplet" aid="0102030405060708"/>
+    <cap jckit="../../references/ant-javacard/sdks/jc310r20210706_kit" targetsdk="../../references/ant-javacard/sdks/jc304_kit" sources="src" aid="0102030405" jar="HelloWorld.jar">
+        <applet class="HelloWorld.HelloWorldApplet" aid="010203040506070809"/>
     </cap>
     </javacard>
     
