@@ -3,8 +3,10 @@ import javax.smartcardio.*;
 import com.licel.jcardsim.utils.*;
 import javacard.framework.*;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import org.junit.jupiter.api.Test;
+import static org.junit.Assert.*;
+import org.junit.Test;
+//import static org.junit.jupiter.api.Assertions.assertEquals;
+//import org.junit.jupiter.api.Test;
 
 import HelloWorld.HelloWorldApplet;
 

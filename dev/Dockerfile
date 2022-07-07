@@ -6,4 +6,5 @@ RUN apt-get -y update && apt-get -y install \
     ant             \
     git             \
     vim             \
-    make
+    make            \
+    cmake

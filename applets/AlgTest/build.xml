@@ -1,0 +1,10 @@
+<project name="AlgTest">
+
+    <taskdef name="javacard" classname="pro.javacard.ant.JavaCard" classpath="ant-javacard.jar"/>
+    <javacard>
+    <cap jckit="../../references/ant-javacard/sdks/jc310r20210706_kit" targetsdk="../../references/ant-javacard/sdks/jc304_kit" sources="src" aid="0102030406" jar="AlgTest.jar">
+        <applet class="AlgTest.AlgTest" aid="010203040606070809"/>
+    </cap>
+    </javacard>
+    
+</project>

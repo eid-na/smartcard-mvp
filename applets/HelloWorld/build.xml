@@ -17,7 +17,7 @@
         <mkdir dir="build/classes"/>
         <javac srcdir="test" destdir="build/classes" includeantruntime="false">
             <classpath>
-                <pathelement location="/usr/share/java/junit-jupiter-api.jar"/>
+                <pathelement location="/usr/share/java/junit.jar"/>
                 <pathelement location="../../references/jcardsim/jcardsim-3.0.4-SNAPSHOT.jar"/>
                 <pathelement location="build/jar/HelloWorld.jar"/> 
             </classpath>

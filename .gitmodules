@@ -13,3 +13,5 @@
 [submodule "references/AppletPlayground"]
 	path = references/AppletPlayground
 	url = https://github.com/martinpaljak/AppletPlayground.git
+[submodule "references/apdu4j"]
+	path = references/apdu4j

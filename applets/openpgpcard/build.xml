@@ -1,0 +1,34 @@
+<project name="Pgp">
+
+    <target name="clean">
+        <delete dir="build"/>
+    </target>
+
+    <target name="cap">
+        <taskdef name="javacard" classname="pro.javacard.ant.JavaCard" classpath="../../tools/ant-javacard.jar"/>
+        <javacard>
+        <cap debug="true" jckit="../../references/ant-javacard/sdks/jc222_kit" targetsdk="../../references/ant-javacard/sdks/jc222_kit" sources="src" aid="0102030405" jar="build/jar/openpgpcard.jar">
+            <applet class="openpgpcard.OpenPGPApplet" aid="010203040500000000"/>
+            <!-- applet class="openpgpcard.OpenPGPSecureMessaging" aid="010203040500000001"/ -->
+            <!-- applet class="openpgpcard.PGPKey" aid="010203040500000002"/ -->
+        </cap>
+        </javacard>
+    </target>
+
+    <target name="test">
+        <mkdir dir="build/classes"/>
+        <javac srcdir="test" destdir="build/classes" debug="true" includeantruntime="false">
+            <classpath>
+                <pathelement location="/usr/share/java/junit-jupiter-api.jar"/>
+                <pathelement location="../../references/jcardsim/jcardsim-3.0.4-SNAPSHOT.jar"/>
+                <pathelement location="build/jar/openpgpcard.jar"/> 
+            </classpath>
+        </javac>
+
+        <mkdir dir="build/jar"/>
+        <jar destfile="build/jar/PgpTest.jar" basedir="build/classes"></jar>
+    </target>
+
+    <target name="build" depends="cap,test">
+    </target>
+</project>
