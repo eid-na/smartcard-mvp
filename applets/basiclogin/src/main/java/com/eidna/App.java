@@ -1,25 +1,19 @@
 package com.eidna;
 
-// import java.security.KeyPairGenerator;
-// import java.security.interfaces.ECKey;
-// import java.security.interfaces.ECPublicKey;
-
 import javacard.framework.Applet;
 import javacard.framework.ISO7816;
 import javacard.framework.ISOException;
 import javacard.framework.Util;
-
-import java.security.interfaces.ECPublicKey;
-
 import javacard.framework.APDU;
+
+import javacard.security.RandomData;
 import javacard.security.KeyBuilder;
 import javacard.security.KeyPair;
 import javacard.security.PublicKey;
 import javacard.security.RSAPublicKey;
 import javacardx.crypto.Cipher;
 import javacard.security.RSAPrivateKey;
-//import javacard.security.ECPublicKey;
-//import javacard.security.ECPrivateKey;
+import javacard.security.ECPublicKey;
 
 public class App extends Applet implements ISO7816 {
     private byte canary                         = (byte) 0x6969;
@@ -27,6 +21,8 @@ public class App extends Applet implements ISO7816 {
     private final byte pinTryLimit              = 3;
     private final byte deselectMagic            = (byte) 0x9696;
     private final byte version[]                = {'I', '2', 'P', '_', 'M', 'V', 'P'};
+    private final byte authNonceLen             = (byte) 4096;
+    private final short shortZero               = (short) 0;
 
     private final byte enterPinIns              = 1;
     private final byte challengeRequestIns      = 2;
@@ -40,6 +36,7 @@ public class App extends Applet implements ISO7816 {
     private byte[] initParamsBytes;
     //private OwnerPin Pin;
     private KeyPair keyPair;
+    private RSAPublicKey clientKey;
 
     private byte[] deselectFlag;
     
@@ -54,7 +51,7 @@ public class App extends Applet implements ISO7816 {
             byte aLen       = bArray[bOffset]; // applet data length
             
             initParamsBytes = new byte[aLen];
-            Util.arrayCopyNonAtomic(bArray, (short) (bOffset + 1), initParamsBytes, (short) 0, aLen);
+            Util.arrayCopyNonAtomic(bArray, (short) (bOffset + 1), initParamsBytes, shortZero, aLen);
         }
 
       //  transientMemory = JCSystem.makeTransientByteArray(LENGTH_ECHO_BYTES, JCSystem.CLEAR_ON_RESET);
@@ -82,9 +79,9 @@ public class App extends Applet implements ISO7816 {
         //    case enterPinIns:
         //        EnterPin(apdu);
         //        break;
-           // case receivePublicKeyIns:
-                //handleReceivePublicKey(apdu);
-            //    break;
+            case receivePublicKeyIns:
+                handleReceivePublicKey(apdu);
+                break;
             case sendPublicKeyIns:
                 handleSendPublicKey(apdu);
                 break;
@@ -94,8 +91,9 @@ public class App extends Applet implements ISO7816 {
             case returnDecryptedNonce:
                 handleReturnDecryptedNonce(apdu);
                 break;
-          //  case sendEncryptedNonce:
-           //     break;
+            case sendEncryptedNonce:
+                handleSendEncryptedNonce(apdu);
+                break;
             default:
                 ISOException.throwIt(ISO7816.SW_INS_NOT_SUPPORTED);
         }
@@ -154,36 +152,66 @@ public class App extends Applet implements ISO7816 {
 
     private void handleGetVersion(APDU apdu) throws ISOException {
         byte[] buffer = apdu.getBuffer();
-        Util.arrayCopyNonAtomic(version, (short) 0, buffer, (short) 0, (short) version.length);
-        apdu.setOutgoingAndSend((short) 0, (short) version.length);
+        Util.arrayCopyNonAtomic(version, shortZero, buffer, shortZero, (short) version.length);
+        apdu.setOutgoingAndSend(shortZero, (short) version.length);
     }
 
     private void handleSendPublicKey(APDU apdu) {
         byte[] buffer = apdu.getBuffer();    
-        short sz = serializeKey(buffer, (short) 0);
-        apdu.setOutgoingAndSend((short) 0,  sz);
+        keyPair.getPublic();
+        short sz = serializeKey(buffer, shortZero);
+        apdu.setOutgoingAndSend(shortZero,  sz);
+    }
+
+    private void handleReceivePublicKey(APDU apdu) {
+        deserializeKey(clientKey, apdu.getBuffer(), shortZero);
+        apdu.setOutgoingAndSend(shortZero, shortZero);
     }
 
     private void handleReturnDecryptedNonce(APDU apdu) {
-        Cipher cipher = Cipher.getInstance(Cipher.ALG_AES_CBC_PKCS5, false);
+        Cipher.OneShot cipher = Cipher.OneShot.open(Cipher.CIPHER_RSA, Cipher.PAD_PKCS1);
         cipher.init(keyPair.getPrivate(), Cipher.MODE_DECRYPT);
 
         byte[] buffer = apdu.getBuffer();
-        byte[] nonce = new byte[4096];
-        cipher.doFinal(buffer, (short) 0, apdu.getIncomingLength(), nonce, (short) 0);
-        Util.arrayCopyNonAtomic(nonce, (short) 0, buffer, (short) 0, (short) 256);
+        byte[] nonce = new byte[authNonceLen];
+        cipher.doFinal(buffer, shortZero, apdu.getIncomingLength(), nonce, shortZero);
+        Util.arrayCopyNonAtomic(nonce, shortZero, buffer, shortZero, authNonceLen);
+    }
+
+    private void handleSendEncryptedNonce(APDU apdu) {
+        RandomData.OneShot rng = RandomData.OneShot.open(RandomData.ALG_SECURE_RANDOM);
+        byte[] nonce = new byte[authNonceLen];
+        rng.nextBytes(nonce, shortZero, (short) nonce.length);
+        
+        Cipher.OneShot cipher = Cipher.OneShot.open(Cipher.CIPHER_RSA, Cipher.PAD_PKCS1);
+        cipher.init(keyPair.getPrivate(), Cipher.MODE_ENCRYPT);
+
+        byte[] ciphertext = new byte[authNonceLen];
+        cipher.doFinal(nonce, shortZero, nonce.length, ciphertext, shortZero);
+        
+        Util.arrayCopyNonAtomic(ciphertext, shortZero, apdu.getBuffer(), shortZero, (short) ciphertext.length);
     }
 
     private short serializeKey(byte[] buffer, short offset) {
-            // https://stackoverflow.com/questions/42690733/javacard-send-rsa-public-key-in-apdu
-            RSAPublicKey key = (RSAPublicKey) keyPair.getPublic();
-            
-            short expLen    = key.getExponent(buffer, (short) (offset + Short.BYTES));
-            Util.setShort(buffer, offset, expLen);
-            
-            short modLen    = key.getModulus(buffer, (short) (offset + Short.BYTES + expLen));
-            Util.setShort(buffer, (short) (offset + Short.BYTES + expLen), modLen);
+        // https://stackoverflow.com/questions/42690733/javacard-send-rsa-public-key-in-apdu
+        RSAPublicKey key = (RSAPublicKey) keyPair.getPublic();
+        
+        short expLen    = key.getExponent(buffer, (short) (offset + Short.BYTES));
+        Util.setShort(buffer, offset, expLen);
+        
+        short modLen    = key.getModulus(buffer, (short) (offset + Short.BYTES + expLen));
+        Util.setShort(buffer, (short) (offset + Short.BYTES + expLen), modLen);
 
-            return (short) (expLen + Short.BYTES + modLen + Short.BYTES);
+        return (short) (expLen + Short.BYTES + modLen + Short.BYTES);
+    }
+
+    private final short deserializeKey(RSAPublicKey key, byte[] buffer, short offset) {
+        short expLen = Util.getShort(buffer, offset);
+        key.setExponent(buffer, (short) (offset + Short.BYTES), expLen);
+        
+        short modLen = Util.getShort(buffer, (short) (offset + Short.BYTES + expLen));
+        key.setModulus(buffer, (short) (offset + Short.BYTES + expLen + Short.BYTES), modLen);
+        
+        return (short) (expLen + Short.BYTES + modLen + Short.BYTES);
     }
 }
