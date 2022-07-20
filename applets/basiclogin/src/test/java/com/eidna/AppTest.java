@@ -2,11 +2,14 @@ package com.eidna;
 
 import com.eidna.App;
 
+import org.bouncycastle.util.encoders.Hex;
 import java.util.Arrays;
 import java.util.Enumeration;
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+//import org.bouncycastle.jcajce.provider.symmetric.AES.KeyGen;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.TestInstance;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -15,17 +18,24 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 
 import java.security.Provider;
 import java.security.Security;
+import java.security.Key;
 import java.security.interfaces.RSAKey;
 import java.security.interfaces.RSAPublicKey;
 import java.security.PublicKey;
 import java.security.SecureRandom;
+import java.security.InvalidKeyException;
 import java.security.KeyFactory;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
+import javax.crypto.KeyGenerator;
+import javax.crypto.BadPaddingException;
 import javax.crypto.Cipher;
+import javax.crypto.IllegalBlockSizeException;
+import javax.crypto.SecretKey;
+import javax.crypto.ShortBufferException;
 
-import java.security.spec.InvalidKeySpecException;
 import java.security.spec.RSAPublicKeySpec;
+import java.security.spec.InvalidKeySpecException;
 import java.security.NoSuchAlgorithmException;
 import javax.crypto.NoSuchPaddingException;
 
@@ -33,6 +43,7 @@ import javacard.framework.Util;
 import javacard.framework.AID;
 import javax.smartcardio.CommandAPDU;
 import javax.smartcardio.ResponseAPDU;
+import javax.swing.text.StyledEditorKit;
 
 import com.licel.jcardsim.utils.AIDUtil;
 import apdu4j.ISO7816;
@@ -40,22 +51,38 @@ import com.licel.jcardsim.smartcardio.CardSimulator;
 
 public class AppTest {
     
-    private final byte enterPinIns              = 1;
-    private final byte challengeRequestIns      = 2;
-    private final byte challengeResponseIns     = 3;
-    private final byte getVersionIns            = 4;
-    private final byte sendPublicKeyIns         = 5;
-    private final byte receivePublicKeyIns      = 6;
-    private final byte returnDecryptedNonce     = 7;
-    private final byte sendEncryptedNonce       = 8;
+    private static final byte maxPinSize               = 8;
+    private static final byte pinTryLimit              = 3;
 
-    private CardSimulator   simulator;
+    private static final byte getVersionIns            = 4;
+    private static final byte sendPublicKeyIns         = 5;
+    private static final byte receivePublicKeyIns      = 6;
+    private static final byte returnDecryptedNonceIns  = 7;
+    private static final byte sendEncryptedNonceIns    = 8;
+    private static final byte receiveSessionKeyIns     = 9;
+    private static final byte receiveDecryptedNonceIns = 10;
+    private static final byte getPinTriesRemainingIns  = 11;
+    private static final byte tryPinIns                = 12;
+
+    private static final int   asymKeyLen              = 1024;
+    private static final int   sessKeyLen              = 256;
+    private static final int   authNonceLen            = 15;
+    private static final short shortZero               = (short) 0;
+
     private CommandAPDU     command;
     private ResponseAPDU    response;
-    private KeyPair         keyPair;
-    private PublicKey       cardKey;
+    private static CommandAPDU cmd;
+    private static ResponseAPDU rsp;
+    private static CardSimulator   simulator;
+    private static KeyPair         keyPair;
+    private static PublicKey       cardKey;
+    private static SecretKey       sessionKey;
 
-    public AppTest() throws NoSuchAlgorithmException, NoSuchPaddingException, InvalidKeySpecException {
+    @BeforeAll
+    public static void setup() throws 
+        NoSuchAlgorithmException, NoSuchPaddingException, InvalidKeySpecException,
+        InvalidKeyException, IllegalBlockSizeException, BadPaddingException {      
+        
         // Create and install the applet
         simulator       = new CardSimulator();
         AID appletAID   = AIDUtil.create("F000000001");
@@ -63,20 +90,123 @@ public class AppTest {
         simulator.selectApplet(appletAID);
 
         // Generate own KeyPair
-        KeyPairGenerator keyGen = KeyPairGenerator.getInstance("RSA");
-        keyGen.initialize(1024);
-        keyPair = keyGen.genKeyPair();
+        System.out.println("Generating test harness' assymetric key");
+        KeyPairGenerator keyPairGen = KeyPairGenerator.getInstance("RSA");
+        keyPairGen.initialize(asymKeyLen);
+        keyPair = keyPairGen.genKeyPair();
+        //String s = new String(keyPair.getPublic().getEncoded(), StandardCharsets.UTF_8);
+        //System.out.println(s);
 
         // Generate session key
+        System.out.println("Generating session key");
+        KeyGenerator keyGen = KeyGenerator.getInstance("AES");
+        keyGen.init(sessKeyLen);
+        sessionKey = keyGen.generateKey();
+        //s = new String(sessionKey.getEncoded(), StandardCharsets.UTF_8);
+        //System.out.println(s);
+
+        /*************/
+        /* PIN TESTS */
+        /*************/
+
+        // Check number of PIN tries remaining
+        cmd         = new CommandAPDU(0, getPinTriesRemainingIns, 0, 0);
+        rsp         = simulator.transmitCommand(cmd);
+        byte[] buffer = rsp.getData();
+        //System.out.print(buffer[0]);
+        assertEquals(pinTryLimit, buffer[0]);
+
+        // Try an incorrect pin
+        byte[] pin  = {1, 2, 3, 4, 5, 6};
+        cmd         = new CommandAPDU(0, tryPinIns, 0, 0, pin);
+        rsp         = simulator.transmitCommand(cmd);
+        assertEquals(ISO7816.SW_SECURITY_STATUS_NOT_SATISFIED, rsp.getSW());
+
+        // Check number of PIN tries remaining
+        cmd         = new CommandAPDU(0, getPinTriesRemainingIns, 0, 0);
+        rsp         = simulator.transmitCommand(cmd);
+        buffer = rsp.getData();
+        //System.out.print(buffer[0]);
+        assertEquals(pinTryLimit-1, buffer[0]);
         
+        // Try the correct pin
+        pin         = new byte[] {1, 2, 3, 4, 5};
+        cmd         = new CommandAPDU(0, tryPinIns, 0, 0, pin);
+        rsp         = simulator.transmitCommand(cmd);
+        assertEquals(ISO7816.SW_NO_ERROR, rsp.getSW());
+
+        // Check number of PIN tries remaining
+        cmd         = new CommandAPDU(0, getPinTriesRemainingIns, 0, 0);
+        rsp         = simulator.transmitCommand(cmd);
+        buffer = rsp.getData();
+        //System.out.print(buffer[0]);
+        assertEquals(pinTryLimit, buffer[0]);
+
+        /************************/
+        /* Exchange public keys */
+        /************************/
+        // Send to card
+        System.out.println("Sending public key to the card");
+        buffer = serializeKey(keyPair.getPublic(), (short) 0);
+        cmd    = new CommandAPDU(0, receivePublicKeyIns, 0, 0, buffer);
+        rsp    = simulator.transmitCommand(cmd);
+        assertEquals(ISO7816.SW_NO_ERROR, rsp.getSW());
+
+        // Receive from card
+        cmd    = new CommandAPDU(0, sendPublicKeyIns, 0, 0);
+        rsp    = simulator.transmitCommand(cmd);
+        assertEquals(ISO7816.SW_NO_ERROR, rsp.getSW());
+        cardKey = deserializeKey(rsp.getData(), (short) 0);
+
+        /**************/
+        /* Challenges */
+        /**************/
+
+        // Receive challenge
+        cmd     = new CommandAPDU(0, sendEncryptedNonceIns, 0, 0);        
+        rsp     = simulator.transmitCommand(cmd);
+        assertEquals(ISO7816.SW_NO_ERROR, rsp.getSW());     // Status OK
+        buffer = doCipher("RSA/ECB/PKCS1Padding", Cipher.DECRYPT_MODE, keyPair.getPrivate(), rsp.getData());
+        cmd     = new CommandAPDU(0, receiveDecryptedNonceIns, 0, 0, buffer);
+        rsp     = simulator.transmitCommand(cmd);
+        assertEquals(ISO7816.SW_NO_ERROR, rsp.getSW());
+
+        // Send challenge
+        SecureRandom rng    = new SecureRandom();
+        byte[] nonce        = new byte[authNonceLen];
+        rng.nextBytes(nonce);
+        System.out.println(Hex.toHexString(nonce));
+        
+        buffer  = doCipher("RSA/ECB/PKCS1Padding", Cipher.ENCRYPT_MODE, cardKey, nonce);
+        System.out.println(Hex.toHexString(buffer));
+        System.out.println(buffer.length);
+        cmd     = new CommandAPDU(0, returnDecryptedNonceIns, 0, 0, buffer);        
+        rsp     = simulator.transmitCommand(cmd);
+        assertEquals(ISO7816.SW_NO_ERROR, rsp.getSW());     // Status OK
+        System.out.println(Hex.toHexString(rsp.getData()));
+        //String s = new String(buffer, StandardCharsets.UTF_8);
+        //System.out.println(s);
+        assertArrayEquals(nonce, rsp.getData());
+
+        
+
+
+
+        // Send session key
+        buffer  = doCipher("RSA/ECB/PKCS1Padding", Cipher.ENCRYPT_MODE, cardKey, sessionKey.getEncoded());
+        cmd     = new CommandAPDU(0, receiveSessionKeyIns, 0, 0, buffer);
+        rsp     = simulator.transmitCommand(cmd);
+        assertEquals(ISO7816.SW_NO_ERROR, rsp.getSW());
 
         
     }
 
     @AfterEach
     void printResponseAPDU() {
-        String s = new String(response.getData(), StandardCharsets.UTF_8);
-        System.out.println(s);
+        if (null != response && 0 < response.getData().length) {
+            String s = new String(response.getData(), StandardCharsets.UTF_8);
+            System.out.println(s);
+        }
     }
 
     @Test
@@ -88,52 +218,7 @@ public class AppTest {
         assertArrayEquals(version, response.getData());    
     }
 
-    @Test
-    void testSendPublicKeyIns() throws NoSuchAlgorithmException, NoSuchPaddingException, InvalidKeySpecException {
-        System.out.println("Getting card's public key");
-        command     = new CommandAPDU(0, sendPublicKeyIns, 0, 0);
-        response    = simulator.transmitCommand(command);
-        assertEquals(ISO7816.SW_NO_ERROR, response.getSW());
-        cardKey     = deserializeKey(response.getData(), (short) 0);
-    }
-
-    @Test
-    void testReceivePublicKeyIns() throws NoSuchAlgorithmException, NoSuchPaddingException, InvalidKeySpecException {
-        System.out.println("Sending public key to the card");
-        command = new CommandAPDU(0, receivePublicKeyIns, 0, 0, keyPair.getPublic().getEncoded(), 0, keyPair.getPublic().)
-    }
-
-    @Test // TODO: under development
-    void authenticateCard() throws NoSuchAlgorithmException, NoSuchPaddingException, InvalidKeySpecException {
-        System.out.println("Authenticating the card");
-        SecureRandom rng    = new SecureRandom();
-        byte[] nonce        = new byte[128];
-        rng.nextBytes(nonce);
-        
-        Cipher cipher       = Cipher.getInstance("RSA");
-        cipher.init(Cipher.ENCRYPT_MODE, cardKey);
-        byte[] buffer       = new byte[128];
-        cipher.doFinal(buffer, (short) 0, (short) 128, nonce, (short) 0);
-       
-        command             = new CommandAPDU(0, returnDecryptedNonce, 0, 0, buffer, 0, 128);
-        response            = simulator.transmitCommand(command);
-        assertEquals(ISO7816.SW_NO_ERROR, response.getSW());     // Status OK
-        assertArrayEquals(nonce, response.getData());
-
-        // Generate session key
-        //AESKey sessionKey = (AESKey) KeyBuilder.buildKey(KeyBuilder.TYPE_AES, KeyBuilder.LENGTH_AES_256, true);
-
-        //Cipher asymCipher;
-        //asymCipher.init(cardKey, Cipher.MODE_ENCRYPT);
-        
-    }
-
-    @Test
-    void sendSessionKey() throws NoSuchAlgorithmException, NoSuchPaddingException, InvalidKeySpecException {
-        
-    }
-
-    private final PublicKey deserializeKey(byte[] buffer, short offset) throws NoSuchAlgorithmException, InvalidKeySpecException {
+    private static final PublicKey deserializeKey(byte[] buffer, short offset) throws NoSuchAlgorithmException, InvalidKeySpecException {
         short expLen            = Util.getShort(buffer, offset);
         byte[] slice            = Arrays.copyOfRange(buffer, offset + Short.BYTES, offset + Short.BYTES + expLen);
         BigInteger exp          = new BigInteger(1, slice);
@@ -147,14 +232,34 @@ public class AppTest {
         return keyFactory.generatePublic(spec);
     }
 
-    private final byte[] serializeKey(PublicKey key, short offset) {
-        byte[] buffer;
+    private static final byte[] serializeKey(PublicKey key, short offset) {
         if ("RSA" == key.getAlgorithm()) {
             RSAPublicKey k = (RSAPublicKey) key;
-            BigInteger exp = k.getPublicExponent();
-            BigInteger mod = k.getModulus();
-          //  key.get
+            byte[] exp = k.getPublicExponent().toByteArray();
+            byte[] mod = k.getModulus().toByteArray();
+            short len = (short) (Short.BYTES + exp.length + Short.BYTES + mod.length);
+            byte[] buffer = new byte[len];
+
+            short off = 0;
+            Util.setShort(buffer, off, (short) exp.length);                                 off += Short.BYTES;
+            for (int i=0; i < exp.length; i += 1) {
+                buffer[off + i] = exp[i];
+            } off += exp.length;
+
+            Util.setShort(buffer, off, (short) mod.length);                                 off += Short.BYTES;
+            for (int i=0; i < mod.length; i += 1) {
+                buffer[off + i] = mod[i];
+            }
+            return buffer;
         }
-        return buffer;
+        byte[] buf = new byte[1];
+        return buf;
+    }
+
+    private static byte[] doCipher(String algorithm, int mode, Key key, byte[] inBuff) throws NoSuchAlgorithmException, NoSuchPaddingException, InvalidKeyException, IllegalBlockSizeException, BadPaddingException {
+        // https://docs.oracle.com/javase/8/docs/technotes/guides/security/SunProviders.html
+        Cipher cipher = Cipher.getInstance(algorithm);
+        cipher.init(mode, key);
+        return cipher.doFinal(inBuff);
     }
 }
