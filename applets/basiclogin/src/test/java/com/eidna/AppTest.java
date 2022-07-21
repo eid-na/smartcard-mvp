@@ -2,6 +2,7 @@ package com.eidna;
 
 import com.eidna.App;
 
+import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.bouncycastle.util.encoders.Hex;
 import java.util.Arrays;
 import java.util.Enumeration;
@@ -9,7 +10,6 @@ import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-//import org.bouncycastle.jcajce.provider.symmetric.AES.KeyGen;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.TestInstance;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -23,20 +23,28 @@ import java.security.interfaces.RSAKey;
 import java.security.interfaces.RSAPublicKey;
 import java.security.PublicKey;
 import java.security.SecureRandom;
+import java.security.AlgorithmParameters;
+import java.security.InvalidAlgorithmParameterException;
 import java.security.InvalidKeyException;
 import java.security.KeyFactory;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
+
+import javax.crypto.SecretKeyFactory;
+import javax.crypto.spec.IvParameterSpec;
+import javax.crypto.spec.SecretKeySpec;
+import javax.crypto.SecretKey;
 import javax.crypto.KeyGenerator;
 import javax.crypto.BadPaddingException;
 import javax.crypto.Cipher;
 import javax.crypto.IllegalBlockSizeException;
-import javax.crypto.SecretKey;
 import javax.crypto.ShortBufferException;
 
 import java.security.spec.RSAPublicKeySpec;
 import java.security.spec.InvalidKeySpecException;
 import java.security.NoSuchAlgorithmException;
+import java.security.PrivateKey;
+
 import javax.crypto.NoSuchPaddingException;
 
 import javacard.framework.Util;
@@ -59,30 +67,39 @@ public class AppTest {
     private static final byte receivePublicKeyIns      = 6;
     private static final byte returnDecryptedNonceIns  = 7;
     private static final byte sendEncryptedNonceIns    = 8;
-    private static final byte receiveSessionKeyIns     = 9;
+    //private static final byte receiveSessionKeyIns     = 9;
     private static final byte receiveDecryptedNonceIns = 10;
     private static final byte getPinTriesRemainingIns  = 11;
     private static final byte tryPinIns                = 12;
+    private static final byte sendSessionKeyIns        = 13;
+    private static final byte testSessionKeyIns        = 14;
 
     private static final int   asymKeyLen              = 1024;
-    private static final int   sessKeyLen              = 256;
+    //private static final int   sessKeyLen              = 256;
     private static final int   authNonceLen            = 15;
     private static final short shortZero               = (short) 0;
 
-    private CommandAPDU     command;
-    private ResponseAPDU    response;
-    private static CommandAPDU cmd;
-    private static ResponseAPDU rsp;
-    private static CardSimulator   simulator;
-    private static KeyPair         keyPair;
-    private static PublicKey       cardKey;
-    private static SecretKey       sessionKey;
+    private static final byte[] expectedVersion        = {'I', '2', 'P', '_', 'M', 'V', 'P'};
+    //private static final byte[] IV                     = {3, 5, 7, 11, 13, 5, 7, 13, 11, 5, 3, 7, 13, 11, 7, 5};
+    private static final byte[] IV       = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+
+    private CommandAPDU             command;
+    private ResponseAPDU            response;
+    private static CommandAPDU      cmd;
+    private static ResponseAPDU     rsp;
+    private static CardSimulator    simulator;
+    private static KeyPair          keyPair;
+    private static PublicKey        cardKey;
+    private static SecretKey        sessionKey;
 
     @BeforeAll
     public static void setup() throws 
         NoSuchAlgorithmException, NoSuchPaddingException, InvalidKeySpecException,
-        InvalidKeyException, IllegalBlockSizeException, BadPaddingException {      
+        InvalidKeyException, IllegalBlockSizeException, BadPaddingException,
+        InvalidAlgorithmParameterException {      
         
+        Security.addProvider(new BouncyCastleProvider());
+
         // Create and install the applet
         simulator       = new CardSimulator();
         AID appletAID   = AIDUtil.create("F000000001");
@@ -97,14 +114,6 @@ public class AppTest {
         //String s = new String(keyPair.getPublic().getEncoded(), StandardCharsets.UTF_8);
         //System.out.println(s);
 
-        // Generate session key
-        System.out.println("Generating session key");
-        KeyGenerator keyGen = KeyGenerator.getInstance("AES");
-        keyGen.init(sessKeyLen);
-        sessionKey = keyGen.generateKey();
-        //s = new String(sessionKey.getEncoded(), StandardCharsets.UTF_8);
-        //System.out.println(s);
-
         /*************/
         /* PIN TESTS */
         /*************/
@@ -113,7 +122,6 @@ public class AppTest {
         cmd         = new CommandAPDU(0, getPinTriesRemainingIns, 0, 0);
         rsp         = simulator.transmitCommand(cmd);
         byte[] buffer = rsp.getData();
-        //System.out.print(buffer[0]);
         assertEquals(pinTryLimit, buffer[0]);
 
         // Try an incorrect pin
@@ -145,6 +153,7 @@ public class AppTest {
         /************************/
         /* Exchange public keys */
         /************************/
+
         // Send to card
         System.out.println("Sending public key to the card");
         buffer = serializeKey(keyPair.getPublic(), (short) 0);
@@ -156,7 +165,7 @@ public class AppTest {
         cmd    = new CommandAPDU(0, sendPublicKeyIns, 0, 0);
         rsp    = simulator.transmitCommand(cmd);
         assertEquals(ISO7816.SW_NO_ERROR, rsp.getSW());
-        cardKey = deserializeKey(rsp.getData(), (short) 0);
+        cardKey = deserializeRSAPublicKey(rsp.getData(), (short) 0);
 
         /**************/
         /* Challenges */
@@ -166,7 +175,7 @@ public class AppTest {
         cmd     = new CommandAPDU(0, sendEncryptedNonceIns, 0, 0);        
         rsp     = simulator.transmitCommand(cmd);
         assertEquals(ISO7816.SW_NO_ERROR, rsp.getSW());     // Status OK
-        buffer = doCipher("RSA/ECB/PKCS1Padding", Cipher.DECRYPT_MODE, keyPair.getPrivate(), rsp.getData());
+        buffer  = doCipher("RSA/ECB/PKCS1Padding", Cipher.DECRYPT_MODE, keyPair.getPrivate(), rsp.getData());
         cmd     = new CommandAPDU(0, receiveDecryptedNonceIns, 0, 0, buffer);
         rsp     = simulator.transmitCommand(cmd);
         assertEquals(ISO7816.SW_NO_ERROR, rsp.getSW());
@@ -175,30 +184,24 @@ public class AppTest {
         SecureRandom rng    = new SecureRandom();
         byte[] nonce        = new byte[authNonceLen];
         rng.nextBytes(nonce);
-        System.out.println(Hex.toHexString(nonce));
-        
-        buffer  = doCipher("RSA/ECB/PKCS1Padding", Cipher.ENCRYPT_MODE, cardKey, nonce);
-        System.out.println(Hex.toHexString(buffer));
-        System.out.println(buffer.length);
-        cmd     = new CommandAPDU(0, returnDecryptedNonceIns, 0, 0, buffer);        
-        rsp     = simulator.transmitCommand(cmd);
-        assertEquals(ISO7816.SW_NO_ERROR, rsp.getSW());     // Status OK
-        System.out.println(Hex.toHexString(rsp.getData()));
-        //String s = new String(buffer, StandardCharsets.UTF_8);
-        //System.out.println(s);
+        buffer              = doCipher("RSA/ECB/PKCS1Padding", Cipher.ENCRYPT_MODE, cardKey, nonce);        
+        cmd                 = new CommandAPDU(0, returnDecryptedNonceIns, 0, 0, buffer);        
+        rsp                 = simulator.transmitCommand(cmd);
+        assertEquals(ISO7816.SW_NO_ERROR, rsp.getSW());
         assertArrayEquals(nonce, rsp.getData());
 
-        
+        /*********************/
+        /* Establish session */
+        /*********************/
 
-
-
-        // Send session key
-        buffer  = doCipher("RSA/ECB/PKCS1Padding", Cipher.ENCRYPT_MODE, cardKey, sessionKey.getEncoded());
-        cmd     = new CommandAPDU(0, receiveSessionKeyIns, 0, 0, buffer);
-        rsp     = simulator.transmitCommand(cmd);
+        // Receive session key
+        cmd             = new CommandAPDU(0, sendSessionKeyIns, 0, 0);
+        rsp             = simulator.transmitCommand(cmd);
         assertEquals(ISO7816.SW_NO_ERROR, rsp.getSW());
-
-        
+        byte[] scratch  = doCipher("RSA/ECB/PKCS1Padding", Cipher.DECRYPT_MODE, keyPair.getPrivate(), rsp.getData());
+        sessionKey      = deserializeSymmKey(scratch, shortZero, "AES");
+        System.out.println(Hex.toHexString(sessionKey.getEncoded()));
+        System.out.println(sessionKey.getEncoded().length);
     }
 
     @AfterEach
@@ -213,22 +216,40 @@ public class AppTest {
     void testGetVersionIns() {
         command         = new CommandAPDU(0, getVersionIns, 0, 0);
         response        = simulator.transmitCommand(command);
-        byte[] version  = {'I', '2', 'P', '_', 'M', 'V', 'P'};
+//        byte[] version  = {'I', '2', 'P', '_', 'M', 'V', 'P'};
+ //       assertEquals(ISO7816.SW_NO_ERROR, response.getSW());
         assertEquals(ISO7816.SW_NO_ERROR, response.getSW());
-        assertArrayEquals(version, response.getData());    
+        assertArrayEquals(expectedVersion, response.getData());    
     }
 
-    private static final PublicKey deserializeKey(byte[] buffer, short offset) throws NoSuchAlgorithmException, InvalidKeySpecException {
-        short expLen            = Util.getShort(buffer, offset);
-        byte[] slice            = Arrays.copyOfRange(buffer, offset + Short.BYTES, offset + Short.BYTES + expLen);
+    @Test
+    void testSessionKey() throws NoSuchAlgorithmException, NoSuchPaddingException, InvalidKeyException, IllegalBlockSizeException, BadPaddingException {
+        command         = new CommandAPDU(0, testSessionKeyIns, 0, 0);
+        response        = simulator.transmitCommand(command);
+        assertEquals(ISO7816.SW_NO_ERROR, response.getSW());
+        System.out.println(Hex.toHexString(response.getData()));
+        byte[] v        = doCipher("AES/CBC/PKCS5Padding", Cipher.DECRYPT_MODE, sessionKey, response.getData());
+        assertArrayEquals(expectedVersion, v);
+    }
+
+    private static final SecretKey deserializeSymmKey(byte[] buffer, short offset, String alg) throws NoSuchAlgorithmException, InvalidKeySpecException {
+        SecretKeySpec spec          = new SecretKeySpec(buffer, alg);
+        SecretKeyFactory keyFactory = SecretKeyFactory.getInstance(alg);
+        return keyFactory.generateSecret(spec);
+    }
+
+    private static final PublicKey deserializeRSAPublicKey(byte[] buffer, short offset) throws NoSuchAlgorithmException, InvalidKeySpecException {
+        short expLen            = Util.getShort(buffer, offset);                        offset += Short.BYTES;
+        byte[] slice            = Arrays.copyOfRange(buffer, offset, offset + expLen);  offset += expLen;
         BigInteger exp          = new BigInteger(1, slice);
 
-        short modLen            = Util.getShort(buffer, (short) (offset + Short.BYTES + expLen));
-        slice                   = Arrays.copyOfRange(buffer, offset + Short.BYTES + expLen, offset + Short.BYTES + expLen + modLen);
+        short modLen            = Util.getShort(buffer, offset);                        offset += Short.BYTES;
+        slice                   = Arrays.copyOfRange(buffer, offset, offset + modLen);
         BigInteger mod          = new BigInteger(1, slice);
 
         RSAPublicKeySpec spec   = new RSAPublicKeySpec(mod, exp);
         KeyFactory keyFactory   = KeyFactory.getInstance("RSA");
+
         return keyFactory.generatePublic(spec);
     }
 
@@ -256,10 +277,13 @@ public class AppTest {
         return buf;
     }
 
-    private static byte[] doCipher(String algorithm, int mode, Key key, byte[] inBuff) throws NoSuchAlgorithmException, NoSuchPaddingException, InvalidKeyException, IllegalBlockSizeException, BadPaddingException {
+    private static byte[] doCipher(String algorithm, int mode, Key key, byte[] inBuff) 
+        throws NoSuchAlgorithmException, NoSuchPaddingException, InvalidKeyException, 
+                IllegalBlockSizeException, BadPaddingException, InvalidAlgorithmParameterException {
         // https://docs.oracle.com/javase/8/docs/technotes/guides/security/SunProviders.html
         Cipher cipher = Cipher.getInstance(algorithm);
-        cipher.init(mode, key);
+        IvParameterSpec iv = new IvParameterSpec(IV);
+        cipher.init(mode, key, iv);
         return cipher.doFinal(inBuff);
     }
 }
