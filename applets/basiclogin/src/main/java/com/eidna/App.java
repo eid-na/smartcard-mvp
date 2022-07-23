@@ -9,8 +9,7 @@ import java.nio.Buffer;
 import java.security.interfaces.RSAKey;
 
 //import org.bouncycastle.crypto.util.CipherFactory;
-
-import com.licel.jcardsim.smartcardio.JCSCard;
+ 
 
 import javacard.framework.JCSystem;
 import javacard.framework.APDU;
@@ -53,7 +52,7 @@ public class App extends Applet implements ISO7816 {
     private byte[]          initParamsBytes;
     private OwnerPIN        pin;
     private byte[]          expectedNonce;
-    private KeyPair         keyPair;
+    private KeyPair         keyPair, signingKeyPair;
     private RSAPublicKey    clientKey;
     private AESKey          sessionKey;
     //private DESKey          sessionKey;
@@ -72,8 +71,9 @@ public class App extends Applet implements ISO7816 {
         }
 
         //DoReset();
-        handleGeneratePin();
-        handleGenerateKeyPair();
+        handleSetPin();
+        generateSigningKeyPair();
+        generateKeyPair();
 
         register();
     }    
@@ -150,14 +150,19 @@ public class App extends Applet implements ISO7816 {
         return false;
     }
 
-    private void handleGeneratePin() {
+    private void handleSetPin() {
         pin = new OwnerPIN(pinTryLimit, maxPinSize);
         byte[] p = {1, 2, 3, 4, 5}; // TODO: set via APDU with issuing authority's permissions
         pin.update(p, shortZero, (byte) 5);
         pin.resetAndUnblock();
     }
 
-    private void handleGenerateKeyPair() {
+    private void generateSigningKeyPair() {
+        signingKeyPair = new KeyPair(KeyPair.ALG_RSA_CRT, KeyBuilder.LENGTH_RSA_1024);
+        signingKeyPair.genKeyPair();
+    }
+
+    private void generateKeyPair() {
         // NOTE: default public exponent for RSA is 65537 (0x10001)
         // https://docs.oracle.com/javacard/3.0.5/api/javacard/security/KeyPair.html#genKeyPair()
         keyPair = new KeyPair(KeyPair.ALG_RSA_CRT, KeyBuilder.LENGTH_RSA_1024);
@@ -170,7 +175,7 @@ public class App extends Applet implements ISO7816 {
             KeyBuilder.LENGTH_AES_256, 
             false
         );
-        byte[] scratch = new byte[sessionKey.getSize() / 8]; // bits -> bytes
+        byte[] scratch = new byte[(short) (sessionKey.getSize() / 8)]; // bits -> bytes
         secureRandom(scratch, shortZero, (short) scratch.length);
         sessionKey.setKey(scratch, shortZero);
     }
@@ -267,7 +272,7 @@ public class App extends Applet implements ISO7816 {
             return;
         }
         handleGenerateSessionKey();
-        byte[] scratch = new byte[sessionKey.getSize() / 8]; // bits -> bytes
+        byte[] scratch = new byte[(short) (sessionKey.getSize() / 8)]; // bits -> bytes
         sessionKey.getKey(scratch, shortZero);
         short len = doCipher(
             Cipher.ALG_RSA_PKCS1, 

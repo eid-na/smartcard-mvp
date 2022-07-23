@@ -188,7 +188,33 @@
           </execution>
         </executions>
       </plugin>
-    </plugins>
+      <plugin>
+	      <artifactId>maven-antrun-plugin</artifactId>
+	      <version>1.7</version>
+	      <executions>
+		      <execution>
+			      <phase>compile</phase>
+			      <configuration>
+				      <target>
+              <ant antfile="build.xml">
+                <target name="cap"/>
+              </ant>
+              </target>
+              <tasks>
+					      <taskdef name="javacard" classname="pro.javacard.ant.JavaCard" classpath="ant-javacard.jar"/>
+					      <javacard>
+						      <cap jckit="../../references/ant-javacard/sdks/jc310r20210706_kit" 
+                        targetsdk="../../references/ant-javacard/sdks/jc304_kit" sources="src/main" classes="target/classes" 
+                        aid="0102030405" output="BasicLogin.cap">
+							      <applet class="com.eidna.App" aid="010203040506070809"/>
+						      </cap>
+					      </javacard>
+				      </tasks>
+			      </configuration>
+		      </execution>
+	      </executions>
+      </plugin>
+   </plugins>
   </build>
   <reporting>
     <plugins>

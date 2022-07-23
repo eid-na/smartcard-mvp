@@ -223,7 +223,7 @@ public class AppTest {
     }
 
     @Test
-    void testSessionKey() throws NoSuchAlgorithmException, NoSuchPaddingException, InvalidKeyException, IllegalBlockSizeException, BadPaddingException {
+    void testSessionKey() throws NoSuchAlgorithmException, NoSuchPaddingException, InvalidKeyException, IllegalBlockSizeException, BadPaddingException, InvalidAlgorithmParameterException {
         command         = new CommandAPDU(0, testSessionKeyIns, 0, 0);
         response        = simulator.transmitCommand(command);
         assertEquals(ISO7816.SW_NO_ERROR, response.getSW());
@@ -282,8 +282,8 @@ public class AppTest {
                 IllegalBlockSizeException, BadPaddingException, InvalidAlgorithmParameterException {
         // https://docs.oracle.com/javase/8/docs/technotes/guides/security/SunProviders.html
         Cipher cipher = Cipher.getInstance(algorithm);
-        IvParameterSpec iv = new IvParameterSpec(IV);
-        cipher.init(mode, key, iv);
+        //IvParameterSpec iv = new IvParameterSpec(IV);
+        cipher.init(mode, key);//, iv);
         return cipher.doFinal(inBuff);
     }
 }
