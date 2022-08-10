@@ -20,6 +20,7 @@ import java.security.Provider;
 import java.security.Security;
 import java.security.Key;
 import java.security.interfaces.RSAKey;
+import java.security.interfaces.ECKey;
 import java.security.interfaces.RSAPublicKey;
 import java.security.PublicKey;
 import java.security.SecureRandom;
@@ -40,6 +41,7 @@ import javax.crypto.Cipher;
 import javax.crypto.IllegalBlockSizeException;
 import javax.crypto.ShortBufferException;
 
+import java.security.spec.ECGenParameterSpec;
 import java.security.spec.RSAPublicKeySpec;
 import java.security.spec.InvalidKeySpecException;
 import java.security.NoSuchAlgorithmException;
@@ -108,7 +110,7 @@ public class AppTest {
 
         // Generate own KeyPair
         System.out.println("Generating test harness' assymetric key");
-        KeyPairGenerator keyPairGen = KeyPairGenerator.getInstance("RSA");
+        KeyPairGenerator keyPairGen = KeyPairGenerator.getInstance("EC");
         keyPairGen.initialize(asymKeyLen);
         keyPair = keyPairGen.genKeyPair();
         //String s = new String(keyPair.getPublic().getEncoded(), StandardCharsets.UTF_8);

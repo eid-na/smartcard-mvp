@@ -5,6 +5,7 @@ import javacard.framework.ISO7816;
 import javacard.framework.ISOException;
 import javacard.framework.Util;
 
+
 import java.nio.Buffer;
 import java.security.interfaces.RSAKey;
 
@@ -14,49 +15,27 @@ import java.security.interfaces.RSAKey;
 import javacard.framework.JCSystem;
 import javacard.framework.APDU;
 
-import javacard.framework.OwnerPIN;
-
-import javacard.security.RandomData;
-import javacard.security.SecretKey;
-import javacard.security.KeyBuilder;
-import javacard.security.Key;
-import javacard.security.KeyPair;
-import javacard.security.PublicKey;
-import javacard.security.RSAPublicKey;
-import javacard.security.RSAPrivateKey;
-import javacard.security.AESKey;
-import javacard.security.DESKey;
-import javacard.security.ECPublicKey;
-import javacardx.crypto.Cipher;
-
+import com.eidna.Crypto;
 
 public class App extends Applet implements ISO7816 {
-    private final byte maxPinSize               = 8;
-    private final byte pinTryLimit              = 3;
-    private final byte version[]                = {'I', '2', 'P', '_', 'M', 'V', 'P'};
-    private final byte authNonceLen             = (byte) 15;
-    private final short shortZero               = (short) 0;
+    private static final byte version[]                = {'I', '2', 'P', '_', 'M', 'V', 'P'};
+    private static final short shortZero               = (short) 0;
+    private Crypto crypto;
 
-    private final byte getVersionIns            = 4;
-    private final byte sendPublicKeyIns         = 5;
-    private final byte receivePublicKeyIns      = 6;
-    private final byte returnDecryptedNonceIns  = 7;
-    private final byte sendEncryptedNonceIns    = 8;
-   // private final byte receiveSessionKeyIns     = 9;
-    private final byte receiveDecryptedNonceIns = 10;
-    private final byte getPinTriesRemainingIns  = 11;
-    private final byte tryPinIns                = 12;
-    private final byte sendSessionKeyIns        = 13;
-    private final byte testSessionKeyIns        = 14;
+    private static final byte getVersionIns            = 4;
+    private static final byte sendPublicKeyIns         = 5;
+    private static final byte receivePublicKeyIns      = 6;
+    private static final byte returnDecryptedNonceIns  = 7;
+    private static final byte sendEncryptedNonceIns    = 8;
+   // private static final byte receiveSessionKeyIns     = 9;
+    private static final byte receiveDecryptedNonceIns = 10;
+    private static final byte getPinTriesRemainingIns  = 11;
+    private static final byte tryPinIns                = 12;
+    private static final byte sendSessionKeyIns        = 13;
+    private static final byte testSessionKeyIns        = 14;
 
-    private byte[]          initParamsBytes;
-    private OwnerPIN        pin;
-    private byte[]          expectedNonce;
-    private KeyPair         keyPair, signingKeyPair;
-    private RSAPublicKey    clientKey;
-    private AESKey          sessionKey;
-    //private DESKey          sessionKey;
-
+    private byte[] initParamsBytes;
+    private byte[] expectedNonce;
     private byte[] deselectFlag;
     
     protected App(byte[] bArray, short bOffset, byte bLength) {
@@ -70,11 +49,8 @@ public class App extends Applet implements ISO7816 {
             Util.arrayCopyNonAtomic(bArray, (short) (bOffset + 1), initParamsBytes, shortZero, aLen);
         }
 
+        crypto = new Crypto();
         //DoReset();
-        handleSetPin();
-        generateSigningKeyPair();
-        generateKeyPair();
-
         register();
     }    
 
@@ -132,52 +108,26 @@ public class App extends Applet implements ISO7816 {
         // ???
     }
 
-    private boolean RequirePin()
+    private void handleSetPin(APDU apdu) 
     {
-        if (pin.isValidated()) {
-            return true;
+        if (!crypto.RequireSession()) {
+            return;
         }
-        ISOException.throwIt(ISO7816.SW_SECURITY_STATUS_NOT_SATISFIED);
-        return false;
+        byte[] buffer = apdu.getBuffer();
+        crypto.setPin(buffer, ISO7816.OFFSET_CDATA, (byte) apdu.getIncomingLength());
     }
 
-    private boolean RequireSession()
-    {
-        if (RequirePin() && sessionKey.isInitialized()) {
-           return true;
-        }
-        ISOException.throwIt(ISO7816.SW_SECURITY_STATUS_NOT_SATISFIED);
-        return false;
-    }
-
-    private void handleSetPin() {
-        pin = new OwnerPIN(pinTryLimit, maxPinSize);
-        byte[] p = {1, 2, 3, 4, 5}; // TODO: set via APDU with issuing authority's permissions
-        pin.update(p, shortZero, (byte) 5);
-        pin.resetAndUnblock();
-    }
-
-    private void generateSigningKeyPair() {
-        signingKeyPair = new KeyPair(KeyPair.ALG_RSA_CRT, KeyBuilder.LENGTH_RSA_1024);
-        signingKeyPair.genKeyPair();
-    }
-
-    private void generateKeyPair() {
-        // NOTE: default public exponent for RSA is 65537 (0x10001)
-        // https://docs.oracle.com/javacard/3.0.5/api/javacard/security/KeyPair.html#genKeyPair()
-        keyPair = new KeyPair(KeyPair.ALG_RSA_CRT, KeyBuilder.LENGTH_RSA_1024);
-        keyPair.genKeyPair();
-    }
+   
 
     private void handleGenerateSessionKey() {
-        sessionKey = (AESKey) KeyBuilder.buildKey(
-            KeyBuilder.TYPE_AES_TRANSIENT_DESELECT,
-            KeyBuilder.LENGTH_AES_256, 
-            false
-        );
-        byte[] scratch = new byte[(short) (sessionKey.getSize() / 8)]; // bits -> bytes
-        secureRandom(scratch, shortZero, (short) scratch.length);
-        sessionKey.setKey(scratch, shortZero);
+       // sessionKey = (AESKey) KeyBuilder.buildKey(
+        //    KeyBuilder.TYPE_AES_TRANSIENT_DESELECT,
+        //    KeyBuilder.LENGTH_AES_256, 
+        ///    false
+        //);
+       // byte[] scratch = new byte[(short) (sessionKey.getSize() / 8)]; // bits -> bytes
+       // secureRandom(scratch, shortZero, (short) scratch.length);
+       // sessionKey.setKey(scratch, shortZero);
     }
 
     private void handleGetVersion(APDU apdu) throws ISOException {
@@ -188,33 +138,34 @@ public class App extends Applet implements ISO7816 {
 
     private void handleGetPinTriesRemaining(APDU apdu) {
         byte[] buffer = apdu.getBuffer();
-        buffer[0] = pin.getTriesRemaining();
+        buffer[0] = crypto.getPinTriesRemaining();
         apdu.setOutgoingAndSend(shortZero, (short) 1);
     }
 
     private void handleTryPin(APDU apdu) {
         apdu.setIncomingAndReceive();
         byte[] buffer = apdu.getBuffer();
-        if (!pin.check(buffer, (short) ISO7816.OFFSET_CDATA, (byte) apdu.getIncomingLength())) {
+        if (!crypto.checkPin(buffer, (short) ISO7816.OFFSET_CDATA, (byte) apdu.getIncomingLength())) {
             ISOException.throwIt(ISO7816.SW_SECURITY_STATUS_NOT_SATISFIED);
         }
     }
 
     private void handleSendPublicKey(APDU apdu) {
         byte[] buffer = apdu.getBuffer();    
-        short sz = serializeKey((RSAPublicKey) keyPair.getPublic(), buffer, shortZero);
+        short sz = crypto.serializeSigningKey(buffer, shortZero);
         apdu.setOutgoingAndSend(shortZero,  sz);
     }
 
     private void handleReceivePublicKey(APDU apdu) {
         apdu.setIncomingAndReceive();    
         byte[] buffer   = apdu.getBuffer();
+        crypto.deserializeClientKey(buffer, ISO7816.OFFSET_CDATA, apdu.getIncomingLength());
         clientKey       = (RSAPublicKey) KeyBuilder.buildKey(KeyBuilder.TYPE_RSA_PUBLIC, KeyBuilder.LENGTH_RSA_1024, false);   
         deserializeKey(clientKey, buffer, ISO7816.OFFSET_CDATA);
     }
 
     private void handleReturnDecryptedNonce(APDU apdu) {
-        if (!RequirePin()) {
+        if (!crypto.RequirePin()) {
             return;
         }
         apdu.setIncomingAndReceive();
@@ -236,7 +187,7 @@ public class App extends Applet implements ISO7816 {
     }
 
     private void handleSendEncryptedNonce(APDU apdu) {
-        if (!RequirePin()) {
+        if (!crypto.RequirePin()) {
             return;
         }
 
@@ -256,7 +207,7 @@ public class App extends Applet implements ISO7816 {
     }
 
     private void handleReceiveDecryptedNonce(APDU apdu) {
-        if (!RequirePin()) {
+        if (!crypto.RequirePin()) {
             return;
         }
         apdu.setIncomingAndReceive();
@@ -268,7 +219,7 @@ public class App extends Applet implements ISO7816 {
     }
 
     private void handleSendSessionKey(APDU apdu) {
-        if (!RequirePin()) {
+        if (!crypto.RequirePin()) {
             return;
         }
         handleGenerateSessionKey();
@@ -285,7 +236,7 @@ public class App extends Applet implements ISO7816 {
     }
 
     private void handleTestSessionKey(APDU apdu) {
-        if (!RequireSession()) {
+        if (!crypto.RequireSession()) {
             return;
         }
         //byte[] scratch = new byte[128];
@@ -305,6 +256,7 @@ public class App extends Applet implements ISO7816 {
        // apdu.setOutgoingAndSend(shortZero, len);
     }
 
+    /*
     private short serializeKey(RSAPublicKey key, byte[] buffer, short offset) {
         // https://stackoverflow.com/questions/42690733/javacard-send-rsa-public-key-in-apdu
  //       RSAPublicKey key = (RSAPublicKey) keyPair.getPublic();
@@ -318,7 +270,7 @@ public class App extends Applet implements ISO7816 {
 
         return (short) (expLen + Short.BYTES + modLen + Short.BYTES);
     }
-
+    
     private short deserializeKey(RSAPublicKey key, byte[] buffer, short offset) {
         short expLen = Util.getShort(buffer, offset);
         key.setExponent(buffer, (short) (offset + Short.BYTES), expLen);
@@ -329,33 +281,12 @@ public class App extends Applet implements ISO7816 {
         return (short) (expLen + Short.BYTES + modLen + Short.BYTES);
     }
 
-    private short doCipher(byte algorithm, byte direction, Key key, byte[] inBuff, short inOffset, short inLength, byte[] outBuff, short outOffset) {
-        // https://docs.oracle.com/javacard/3.0.5/api/javacardx/crypto/Cipher.html#init(javacard.security.Key,%20byte,%20byte[],%20short,%20short)
-        Cipher cipher   = Cipher.getInstance(algorithm, false);
-       // byte[] IV       = {3, 5, 7, 11, 13, 5, 7, 13, 11, 5, 3, 7, 13, 11, 7, 5};
-        byte[] IV       = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
-       // cipher.init(key, direction, IV, shortZero, (short) IV.length);
-        cipher.init(key, direction);
-        return cipher.doFinal(inBuff, inOffset, inLength, outBuff, outOffset);
-    }
 
     private void secureRandom(byte[] out, short offset, short length) {
         RandomData rng  = RandomData.getInstance(RandomData.ALG_SECURE_RANDOM);
         rng.generateData(out, offset, length);
     }
 
-    /*
-    private byte[] receiveCopy(APDU apdu) {
-        short bts_read = apdu.setIncomingAndReceive();
-        byte[] buffer = byte[apdu.getIncomingLength()];
-        Util.arrayCopyNonAtomic(apdu.getBuffer(), ISO7816.OFFSET_CDATA, buffer, shortZero, bts_read);
-        short bts = 0;
-        while (0 < (bts = apdu.receiveBytes(shortZero))) {
-            Util.arrayCopyNonAtomic(apdu.getBuffer(), shortZero, buffer, bts_read, bts);
-            bts_read += bts;
-        }
-        return buffer;
-    }*/
-
+    */
     
 }
