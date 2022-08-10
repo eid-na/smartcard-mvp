@@ -9,7 +9,7 @@ RUN pacman -Syu     \
     vim             \
     make            && \         
     mvn install:install-file        \
-        -Dfile="/shared/JavaCard/references/jcardsim/jcardsim-3.0.4-SNAPSHOT.jar"      \
+        -Dfile="/clone/references/jcardsim/jcardsim-3.0.4-SNAPSHOT.jar"      \
         -DgroupId=com.licel       \
         -DartifactId=jcardsim     \
         -Dversion=3.0.4           \
